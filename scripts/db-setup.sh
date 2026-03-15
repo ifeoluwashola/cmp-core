@@ -65,6 +65,14 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO cmp_app, cmp_service;
 "
 
+# ── 4. Allow the connecting user to assume application roles ──────────────────
+# cmp_service: needed by WithServiceTx for cross-org auditor queries.
+# cmp_app:     needed by WithOrgTx — switching to this non-superuser role
+#              ensures RLS isolation policies are actually enforced (superusers
+#              bypass RLS even with FORCE ROW LEVEL SECURITY).
+echo "==> Granting cmp_service and cmp_app roles to '$DB_USER'..."
+$PSQL -d "$DB_NAME" -c "GRANT cmp_service, cmp_app TO \"$DB_USER\";"
+
 echo ""
 echo "✅  Database '$DB_NAME' and roles cmp_app / cmp_service are ready."
 echo "    Next: make migrate-up"

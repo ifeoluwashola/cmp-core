@@ -49,12 +49,29 @@ func WithOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func
 		}
 	}()
 
+	// ── Step 1: Set the tenant context (GUC variable) ────────────────────────
+	//
 	// SET LOCAL scopes the variable to this transaction only.
-	// If the connection is returned to the pool and reused, the value is gone.
-	if _, err := tx.Exec(ctx,
-		"SET LOCAL app.current_organization_id = $1", orgID.String(),
-	); err != nil {
+	// pgx does not support $1 placeholders in SET LOCAL, so we interpolate
+	// the already-validated uuid.UUID directly (no injection risk).
+	setOrgSQL := fmt.Sprintf("SET LOCAL app.current_organization_id = '%s'", orgID.String())
+	if _, err := tx.Exec(ctx, setOrgSQL); err != nil {
 		return fmt.Errorf("rls: set org context: %w", err)
+	}
+
+	// ── Step 2: Switch to the cmp_app role ────────────────────────────────────
+	//
+	// CRITICAL: The connecting user (e.g. martsplaza_user) is typically a
+	// PostgreSQL superuser. Superusers bypass ALL row-level security, even when
+	// FORCE ROW LEVEL SECURITY is set. By switching to cmp_app (a non-superuser,
+	// non-BYPASSRLS role) we ensure the RLS isolation policy is actually enforced.
+	//
+	// The org ID GUC variable set above survives the role switch because it is
+	// a session-level setting, not a role-level one.
+	//
+	// Prerequisite: GRANT cmp_app TO <login_role> must have been run (db-setup.sh).
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE cmp_app"); err != nil {
+		return fmt.Errorf("rls: set role cmp_app: %w", err)
 	}
 
 	if err := fn(tx); err != nil {

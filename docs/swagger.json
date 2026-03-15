@@ -1,0 +1,447 @@
+{
+    "schemes": [
+        "http"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "Cloud Management Platform — multi-tenant API Gateway.",
+        "title": "CMP-Core API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/api/v1/environments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "environments"
+                ],
+                "summary": "List all cloud environments for the tenant",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "environments"
+                ],
+                "summary": "Register a new cloud environment (spoke)",
+                "parameters": [
+                    {
+                        "description": "Environment details",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.createCloudEnvRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/login": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "identity"
+                ],
+                "summary": "Authenticate and receive a JWT",
+                "parameters": [
+                    {
+                        "description": "Credentials",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.loginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.loginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/register": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "identity"
+                ],
+                "summary": "Register a new organization and owner account",
+                "parameters": [
+                    {
+                        "description": "Registration details",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.registerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.registerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_ifeoluwashola_cmp-core_internal_models.AuthType": {
+            "type": "string",
+            "enum": [
+                "oidc",
+                "iam_cross_account_role",
+                "service_account_key"
+            ],
+            "x-enum-varnames": [
+                "AuthTypeOIDC",
+                "AuthTypeIAMCrossAccountRole",
+                "AuthTypeServiceAccountKey"
+            ]
+        },
+        "github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment": {
+            "type": "object",
+            "properties": {
+                "auth_type": {
+                    "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.AuthType"
+                },
+                "connection_status": {
+                    "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.ConnStatus"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider"
+                },
+                "role_arn": {
+                    "description": "RoleARN is nullable — not all auth types require it.",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider": {
+            "type": "string",
+            "enum": [
+                "aws",
+                "gcp",
+                "azure",
+                "other"
+            ],
+            "x-enum-varnames": [
+                "CloudProviderAWS",
+                "CloudProviderGCP",
+                "CloudProviderAzure",
+                "CloudProviderOther"
+            ]
+        },
+        "github_com_ifeoluwashola_cmp-core_internal_models.ConnStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "error",
+                "pending"
+            ],
+            "x-enum-varnames": [
+                "ConnStatusActive",
+                "ConnStatusInactive",
+                "ConnStatusError",
+                "ConnStatusPending"
+            ]
+        },
+        "internal_handlers.createCloudEnvRequest": {
+            "type": "object",
+            "required": [
+                "auth_type",
+                "name",
+                "provider"
+            ],
+            "properties": {
+                "auth_type": {
+                    "enum": [
+                        "oidc",
+                        "iam_cross_account_role",
+                        "service_account_key"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.AuthType"
+                        }
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "provider": {
+                    "enum": [
+                        "aws",
+                        "gcp",
+                        "azure",
+                        "other"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider"
+                        }
+                    ]
+                },
+                "role_arn": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.loginRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.loginResponse": {
+            "type": "object",
+            "properties": {
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.registerRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "organization_name",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "organization_name": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 8
+                }
+            }
+        },
+        "internal_handlers.registerResponse": {
+            "type": "object",
+            "properties": {
+                "organization": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "tier": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "user": {
+                    "type": "object",
+                    "properties": {
+                        "email": {
+                            "type": "string"
+                        },
+                        "id": {
+                            "type": "string"
+                        },
+                        "role": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Enter your JWT as: Bearer \u003ctoken\u003e",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

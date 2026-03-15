@@ -1,0 +1,296 @@
+basePath: /
+definitions:
+  github_com_ifeoluwashola_cmp-core_internal_models.AuthType:
+    enum:
+    - oidc
+    - iam_cross_account_role
+    - service_account_key
+    type: string
+    x-enum-varnames:
+    - AuthTypeOIDC
+    - AuthTypeIAMCrossAccountRole
+    - AuthTypeServiceAccountKey
+  github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment:
+    properties:
+      auth_type:
+        $ref: '#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.AuthType'
+      connection_status:
+        $ref: '#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.ConnStatus'
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      organization_id:
+        type: string
+      provider:
+        $ref: '#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider'
+      role_arn:
+        description: RoleARN is nullable — not all auth types require it.
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider:
+    enum:
+    - aws
+    - gcp
+    - azure
+    - other
+    type: string
+    x-enum-varnames:
+    - CloudProviderAWS
+    - CloudProviderGCP
+    - CloudProviderAzure
+    - CloudProviderOther
+  github_com_ifeoluwashola_cmp-core_internal_models.ConnStatus:
+    enum:
+    - active
+    - inactive
+    - error
+    - pending
+    type: string
+    x-enum-varnames:
+    - ConnStatusActive
+    - ConnStatusInactive
+    - ConnStatusError
+    - ConnStatusPending
+  internal_handlers.createCloudEnvRequest:
+    properties:
+      auth_type:
+        allOf:
+        - $ref: '#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.AuthType'
+        enum:
+        - oidc
+        - iam_cross_account_role
+        - service_account_key
+      name:
+        type: string
+      provider:
+        allOf:
+        - $ref: '#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider'
+        enum:
+        - aws
+        - gcp
+        - azure
+        - other
+      role_arn:
+        type: string
+    required:
+    - auth_type
+    - name
+    - provider
+    type: object
+  internal_handlers.loginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  internal_handlers.loginResponse:
+    properties:
+      token:
+        type: string
+    type: object
+  internal_handlers.registerRequest:
+    properties:
+      email:
+        type: string
+      organization_name:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - organization_name
+    - password
+    type: object
+  internal_handlers.registerResponse:
+    properties:
+      organization:
+        properties:
+          id:
+            type: string
+          name:
+            type: string
+          tier:
+            type: string
+        type: object
+      user:
+        properties:
+          email:
+            type: string
+          id:
+            type: string
+          role:
+            type: string
+        type: object
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Cloud Management Platform — multi-tenant API Gateway.
+  title: CMP-Core API
+  version: "1.0"
+paths:
+  /api/v1/environments:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all cloud environments for the tenant
+      tags:
+      - environments
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Environment details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.createCloudEnvRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register a new cloud environment (spoke)
+      tags:
+      - environments
+  /login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.loginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Authenticate and receive a JWT
+      tags:
+      - identity
+  /register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Registration details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.registerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_handlers.registerResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Register a new organization and owner account
+      tags:
+      - identity
+schemes:
+- http
+securityDefinitions:
+  BearerAuth:
+    description: 'Enter your JWT as: Bearer <token>'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
