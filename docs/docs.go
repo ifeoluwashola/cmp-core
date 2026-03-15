@@ -15,6 +15,118 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/costs/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Aggregates daily_costs for the current calendar month, grouped by service category.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "finops"
+                ],
+                "summary": "Current-month cost summary by service category",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/repository.CostSummaryRow"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/deployments": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a deployment record (status: queued), calls the CI/CD provider to start the pipeline, then updates the record with the returned job_id (status: running). Returns 202 Accepted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Trigger an IaC pipeline deployment",
+                "parameters": [
+                    {
+                        "description": "Deployment details",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.triggerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/environments": {
             "get": {
                 "security": [
@@ -35,7 +147,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment"
+                                "$ref": "#/definitions/models.CloudEnvironment"
                             }
                         }
                     },
@@ -82,7 +194,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.createCloudEnvRequest"
+                            "$ref": "#/definitions/handlers.createCloudEnvRequest"
                         }
                     }
                 ],
@@ -90,7 +202,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment"
+                            "$ref": "#/definitions/models.CloudEnvironment"
                         }
                     },
                     "400": {
@@ -104,6 +216,149 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/infrastructure": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all discovered cloud resources. Filter by env_id to scope to one environment.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "infrastructure"
+                ],
+                "summary": "List infrastructure resources for the tenant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by cloud environment UUID",
+                        "name": "env_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.InfrastructureResource"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/webhooks/cicd": {
+            "post": {
+                "description": "Called by the CI/CD system when a pipeline finishes. Authenticated by X-Webhook-Secret header (not a user JWT). Updates the deployment record status and logs.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "webhooks"
+                ],
+                "summary": "Receive CI/CD pipeline completion callbacks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pre-shared webhook secret",
+                        "name": "X-Webhook-Secret",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Pipeline result",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.webhookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -142,7 +397,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.loginRequest"
+                            "$ref": "#/definitions/handlers.loginRequest"
                         }
                     }
                 ],
@@ -150,7 +405,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.loginResponse"
+                            "$ref": "#/definitions/handlers.loginResponse"
                         }
                     },
                     "400": {
@@ -202,7 +457,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.registerRequest"
+                            "$ref": "#/definitions/handlers.registerRequest"
                         }
                     }
                 ],
@@ -210,7 +465,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.registerResponse"
+                            "$ref": "#/definitions/handlers.registerResponse"
                         }
                     },
                     "400": {
@@ -245,83 +500,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_ifeoluwashola_cmp-core_internal_models.AuthType": {
-            "type": "string",
-            "enum": [
-                "oidc",
-                "iam_cross_account_role",
-                "service_account_key"
-            ],
-            "x-enum-varnames": [
-                "AuthTypeOIDC",
-                "AuthTypeIAMCrossAccountRole",
-                "AuthTypeServiceAccountKey"
-            ]
-        },
-        "github_com_ifeoluwashola_cmp-core_internal_models.CloudEnvironment": {
-            "type": "object",
-            "properties": {
-                "auth_type": {
-                    "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.AuthType"
-                },
-                "connection_status": {
-                    "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.ConnStatus"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "organization_id": {
-                    "type": "string"
-                },
-                "provider": {
-                    "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider"
-                },
-                "role_arn": {
-                    "description": "RoleARN is nullable — not all auth types require it.",
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider": {
-            "type": "string",
-            "enum": [
-                "aws",
-                "gcp",
-                "azure",
-                "other"
-            ],
-            "x-enum-varnames": [
-                "CloudProviderAWS",
-                "CloudProviderGCP",
-                "CloudProviderAzure",
-                "CloudProviderOther"
-            ]
-        },
-        "github_com_ifeoluwashola_cmp-core_internal_models.ConnStatus": {
-            "type": "string",
-            "enum": [
-                "active",
-                "inactive",
-                "error",
-                "pending"
-            ],
-            "x-enum-varnames": [
-                "ConnStatusActive",
-                "ConnStatusInactive",
-                "ConnStatusError",
-                "ConnStatusPending"
-            ]
-        },
-        "internal_handlers.createCloudEnvRequest": {
+        "handlers.createCloudEnvRequest": {
             "type": "object",
             "required": [
                 "auth_type",
@@ -337,7 +516,7 @@ const docTemplate = `{
                     ],
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.AuthType"
+                            "$ref": "#/definitions/models.AuthType"
                         }
                     ]
                 },
@@ -353,7 +532,7 @@ const docTemplate = `{
                     ],
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_ifeoluwashola_cmp-core_internal_models.CloudProvider"
+                            "$ref": "#/definitions/models.CloudProvider"
                         }
                     ]
                 },
@@ -362,7 +541,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handlers.loginRequest": {
+        "handlers.loginRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -377,7 +556,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handlers.loginResponse": {
+        "handlers.loginResponse": {
             "type": "object",
             "properties": {
                 "token": {
@@ -385,7 +564,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handlers.registerRequest": {
+        "handlers.registerRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -405,7 +584,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handlers.registerResponse": {
+        "handlers.registerResponse": {
             "type": "object",
             "properties": {
                 "organization": {
@@ -435,6 +614,220 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
+                }
+            }
+        },
+        "handlers.triggerRequest": {
+            "type": "object",
+            "required": [
+                "environment_id",
+                "module_name"
+            ],
+            "properties": {
+                "environment_id": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.webhookRequest": {
+            "type": "object",
+            "required": [
+                "job_id",
+                "status"
+            ],
+            "properties": {
+                "job_id": {
+                    "type": "string"
+                },
+                "logs": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "success",
+                        "failed"
+                    ]
+                }
+            }
+        },
+        "models.AuthType": {
+            "type": "string",
+            "enum": [
+                "oidc",
+                "iam_cross_account_role",
+                "service_account_key"
+            ],
+            "x-enum-varnames": [
+                "AuthTypeOIDC",
+                "AuthTypeIAMCrossAccountRole",
+                "AuthTypeServiceAccountKey"
+            ]
+        },
+        "models.CloudEnvironment": {
+            "type": "object",
+            "properties": {
+                "auth_type": {
+                    "$ref": "#/definitions/models.AuthType"
+                },
+                "connection_status": {
+                    "$ref": "#/definitions/models.ConnStatus"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "$ref": "#/definitions/models.CloudProvider"
+                },
+                "role_arn": {
+                    "description": "RoleARN is nullable — not all auth types require it.",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.CloudProvider": {
+            "type": "string",
+            "enum": [
+                "aws",
+                "gcp",
+                "azure",
+                "other"
+            ],
+            "x-enum-varnames": [
+                "CloudProviderAWS",
+                "CloudProviderGCP",
+                "CloudProviderAzure",
+                "CloudProviderOther"
+            ]
+        },
+        "models.ConnStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "error",
+                "pending"
+            ],
+            "x-enum-varnames": [
+                "ConnStatusActive",
+                "ConnStatusInactive",
+                "ConnStatusError",
+                "ConnStatusPending"
+            ]
+        },
+        "models.Deployment": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "description": "JobID is the opaque tracking ID returned by the CI/CD provider after trigger.",
+                    "type": "string"
+                },
+                "logs": {
+                    "description": "Logs holds captured terminal output; null until the pipeline completes.",
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/models.DeploymentStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.DeploymentStatus": {
+            "type": "string",
+            "enum": [
+                "queued",
+                "running",
+                "success",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "DeploymentStatusQueued",
+                "DeploymentStatusRunning",
+                "DeploymentStatusSuccess",
+                "DeploymentStatusFailed"
+            ]
+        },
+        "models.InfrastructureResource": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "description": "Attributes holds arbitrary cloud-provider metadata (region, tags, sizing…).",
+                    "type": "object"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_audited_at": {
+                    "description": "LastAuditedAt is nullable — newly discovered resources have not been audited.",
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "string"
+                },
+                "provider_resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "repository.CostSummaryRow": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "service_category": {
+                    "type": "string"
+                },
+                "total_amount": {
+                    "description": "TotalAmount is a string-encoded NUMERIC to avoid float64 rounding loss.",
+                    "type": "string"
                 }
             }
         }

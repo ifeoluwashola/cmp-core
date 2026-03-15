@@ -102,7 +102,7 @@ type InfrastructureResource struct {
 	ProviderResourceID string          `db:"provider_resource_id" json:"provider_resource_id"`
 	ResourceType       string          `db:"resource_type"        json:"resource_type"`
 	// Attributes holds arbitrary cloud-provider metadata (region, tags, sizing…).
-	Attributes         json.RawMessage `db:"attributes"           json:"attributes"`
+	Attributes         json.RawMessage `db:"attributes"           json:"attributes"           swaggertype:"object"`
 	Status             string          `db:"status"               json:"status"`
 	// LastAuditedAt is nullable — newly discovered resources have not been audited.
 	LastAuditedAt      *time.Time      `db:"last_audited_at"      json:"last_audited_at,omitempty"`
@@ -126,3 +126,30 @@ type DailyCost struct {
 	Currency        string    `db:"currency"         json:"currency"`
 	CreatedAt       time.Time `db:"created_at"       json:"created_at"`
 }
+
+// ─── Deployment ───────────────────────────────────────────────────────────────
+// An IaC pipeline run triggered by the Provisioning Engine. RLS-protected.
+
+type DeploymentStatus string
+
+const (
+	DeploymentStatusQueued  DeploymentStatus = "queued"
+	DeploymentStatusRunning DeploymentStatus = "running"
+	DeploymentStatusSuccess DeploymentStatus = "success"
+	DeploymentStatusFailed  DeploymentStatus = "failed"
+)
+
+type Deployment struct {
+	ID             uuid.UUID        `db:"id"              json:"id"`
+	OrganizationID uuid.UUID        `db:"organization_id" json:"organization_id"`
+	EnvironmentID  uuid.UUID        `db:"environment_id"  json:"environment_id"`
+	ModuleName     string           `db:"module_name"     json:"module_name"`
+	Status         DeploymentStatus `db:"status"          json:"status"`
+	// JobID is the opaque tracking ID returned by the CI/CD provider after trigger.
+	JobID     *string   `db:"job_id"    json:"job_id,omitempty"`
+	// Logs holds captured terminal output; null until the pipeline completes.
+	Logs      *string   `db:"logs"      json:"logs,omitempty"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+

@@ -17,8 +17,10 @@ import (
 // Provider is the contract every cloud integration must fulfil.
 // FetchResources discovers the infrastructure resources for a single cloud
 // environment and returns them as model structs ready for upsert.
+// FetchCosts retrieves daily billing records for the environment.
 type Provider interface {
 	FetchResources(ctx context.Context, env models.CloudEnvironment) ([]models.InfrastructureResource, error)
+	FetchCosts(ctx context.Context, env models.CloudEnvironment) ([]models.DailyCost, error)
 }
 
 // Registry maps a CloudProvider enum to its live implementation.

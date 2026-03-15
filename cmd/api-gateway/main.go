@@ -25,6 +25,7 @@ import (
 
 	"github.com/ifeoluwashola/cmp-core/internal/api"
 	"github.com/ifeoluwashola/cmp-core/internal/auth"
+	"github.com/ifeoluwashola/cmp-core/internal/cicd"
 	"github.com/ifeoluwashola/cmp-core/internal/database"
 )
 
@@ -48,8 +49,19 @@ func main() {
 	expiryHours, _ := strconv.Atoi(getEnv("JWT_EXPIRY_HOURS", "24"))
 	jwtManager := auth.NewManager(secret, expiryHours)
 
+	// ── CI/CD Provider ────────────────────────────────────────────────────────
+	// Swap cicd.NewMockProvider() for a real implementation once a CI/CD
+	// system (GitHub Actions, GitLab CI, …) is configured.
+	cicdProvider := cicd.NewMockProvider()
+
+	// ── Webhook Secret ────────────────────────────────────────────────────────
+	webhookSecret := getEnv("WEBHOOK_SECRET", "")
+	if webhookSecret == "" {
+		log.Fatal("api-gateway: WEBHOOK_SECRET must be set")
+	}
+
 	// ── Router & Server ───────────────────────────────────────────────────────
-	router := api.SetupRouter(pool, jwtManager)
+	router := api.SetupRouter(pool, jwtManager, cicdProvider, webhookSecret)
 
 	addr := ":" + getEnv("PORT", "8080")
 	log.Printf("api-gateway: listening on %s", addr)
@@ -57,6 +69,7 @@ func main() {
 		log.Fatalf("api-gateway: server error: %v", err)
 	}
 }
+
 
 func buildConnString() string {
 	if url := os.Getenv("DATABASE_URL"); url != "" {

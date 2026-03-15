@@ -3,7 +3,7 @@
 //
 // Replace this with a real implementation that calls the AWS SDK once you
 // have IAM cross-account roles configured. The interface contract is
-// identical — only FetchResources changes.
+// identical — only FetchResources and FetchCosts change.
 
 package aws
 
@@ -82,4 +82,38 @@ func (m *MockFetcher) FetchResources(ctx context.Context, env models.CloudEnviro
 	}
 
 	return resources, nil
+}
+
+// FetchCosts returns three hard-coded daily cost records for the current date.
+// Categories mirror typical AWS Cost Explorer groupings.
+func (m *MockFetcher) FetchCosts(ctx context.Context, env models.CloudEnvironment) ([]models.DailyCost, error) {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+
+	costs := []models.DailyCost{
+		{
+			OrganizationID:  env.OrganizationID,
+			EnvironmentID:   env.ID,
+			Date:            today,
+			ServiceCategory: "Compute",
+			Amount:          "45.500000",
+			Currency:        "USD",
+		},
+		{
+			OrganizationID:  env.OrganizationID,
+			EnvironmentID:   env.ID,
+			Date:            today,
+			ServiceCategory: "Database",
+			Amount:          "12.000000",
+			Currency:        "USD",
+		},
+		{
+			OrganizationID:  env.OrganizationID,
+			EnvironmentID:   env.ID,
+			Date:            today,
+			ServiceCategory: "Storage",
+			Amount:          "3.750000",
+			Currency:        "USD",
+		},
+	}
+	return costs, nil
 }

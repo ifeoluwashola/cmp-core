@@ -5,9 +5,9 @@
 //  1. Fetches all *active* cloud environments across all tenants (using
 //     WithServiceTx / cmp_service role to bypass RLS).
 //  2. For each environment, calls the registered cloud Provider to get
-//     the current list of infrastructure resources.
-//  3. Upserts those resources into the database under the correct tenant
-//     context using WithOrgTx (which enforces RLS for the write path).
+//     the current list of infrastructure resources AND daily costs.
+//  3. Upserts resources into infrastructure_resources and costs into
+//     daily_costs under the correct tenant context (WithOrgTx / RLS).
 
 package worker
 
@@ -83,7 +83,7 @@ func (a *Auditor) runCycle(ctx context.Context) error {
 	return nil
 }
 
-// auditEnvironment polls one cloud environment and upserts its resources.
+// auditEnvironment polls one cloud environment and upserts its resources and costs.
 // Returns the number of resources upserted.
 func (a *Auditor) auditEnvironment(ctx context.Context, env models.CloudEnvironment) (int, error) {
 	// ── Step 2: Fetch current resources from the cloud provider ────────────
@@ -94,16 +94,34 @@ func (a *Auditor) auditEnvironment(ctx context.Context, env models.CloudEnvironm
 
 	resources, err := provider.FetchResources(ctx, env)
 	if err != nil {
-		return 0, fmt.Errorf("auditEnvironment: fetch: %w", err)
+		return 0, fmt.Errorf("auditEnvironment: fetch resources: %w", err)
 	}
 
-	if len(resources) == 0 {
+	// ── Step 3: Fetch daily costs from the cloud provider ──────────────────
+	costs, err := provider.FetchCosts(ctx, env)
+	if err != nil {
+		// Non-fatal: log and continue without cost data.
+		log.Printf("auditEnvironment: fetch costs for %s: %v", env.ID, err)
+		costs = nil
+	}
+
+	if len(resources) == 0 && len(costs) == 0 {
 		return 0, nil
 	}
 
-	// ── Step 3: Upsert resources under the correct tenant context ──────────
+	// ── Step 4: Upsert resources and costs under the correct tenant context ─
 	err = database.WithOrgTx(ctx, a.pool, env.OrganizationID, func(tx pgx.Tx) error {
-		return upsertResources(ctx, tx, resources)
+		if len(resources) > 0 {
+			if err := upsertResources(ctx, tx, resources); err != nil {
+				return err
+			}
+		}
+		if len(costs) > 0 {
+			if err := upsertCosts(ctx, tx, costs); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return 0, fmt.Errorf("auditEnvironment: upsert: %w", err)
@@ -175,6 +193,34 @@ func upsertResources(ctx context.Context, tx pgx.Tx, resources []models.Infrastr
 			r.LastAuditedAt,
 		); err != nil {
 			return fmt.Errorf("upsertResources %s: %w", r.ProviderResourceID, err)
+		}
+	}
+	return nil
+}
+
+func upsertCosts(ctx context.Context, tx pgx.Tx, costs []models.DailyCost) error {
+	// ON CONFLICT target must match the constraint defined in migration 000006:
+	//   UNIQUE (environment_id, date, service_category)
+	// organization_id is intentionally omitted — environment_id already implies it,
+	// and RLS prevents cross-org access at the session level.
+	const q = `
+		INSERT INTO daily_costs
+			(organization_id, environment_id, date, service_category, amount, currency)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (environment_id, date, service_category) DO UPDATE SET
+			amount   = EXCLUDED.amount,
+			currency = EXCLUDED.currency`
+
+	for _, c := range costs {
+		if _, err := tx.Exec(ctx, q,
+			c.OrganizationID,
+			c.EnvironmentID,
+			c.Date,
+			c.ServiceCategory,
+			c.Amount,
+			c.Currency,
+		); err != nil {
+			return fmt.Errorf("upsertCosts %s/%s: %w", c.Date.Format("2006-01-02"), c.ServiceCategory, err)
 		}
 	}
 	return nil

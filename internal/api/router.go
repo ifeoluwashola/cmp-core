@@ -6,6 +6,7 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/ifeoluwashola/cmp-core/internal/auth"
+	"github.com/ifeoluwashola/cmp-core/internal/cicd"
 	"github.com/ifeoluwashola/cmp-core/internal/handlers"
 	"github.com/ifeoluwashola/cmp-core/internal/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,7 +18,7 @@ import (
 )
 
 // SetupRouter creates the Gin engine with all routes and middleware registered.
-func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager) *gin.Engine {
+func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager, cicdProvider cicd.PipelineProvider, webhookSecret string) *gin.Engine {
 	r := gin.New()
 
 	// ── Global middleware ─────────────────────────────────────────────────────
@@ -33,6 +34,14 @@ func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager) *gin.Engine {
 	r.POST("/register", identityHandler.Register)
 	r.POST("/login",    identityHandler.Login)
 
+	// ── Webhook routes (no JWT — validated by shared secret) ──────────────────
+	deploymentHandler := handlers.NewDeploymentHandler(pool, cicdProvider)
+	webhooks := r.Group("/api/v1/webhooks")
+	webhooks.Use(middleware.WebhookSecretMiddleware(webhookSecret))
+	{
+		webhooks.POST("/cicd", deploymentHandler.WebhookCallback)
+	}
+
 	// ── Protected API v1 group (JWT required) ─────────────────────────────────
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.TenantMiddleware(jwtManager))
@@ -42,8 +51,20 @@ func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager) *gin.Engine {
 	envRoutes := v1.Group("/environments")
 	{
 		envRoutes.POST("", envHandler.Create)
-		envRoutes.GET("", envHandler.List)
+		envRoutes.GET("",  envHandler.List)
 	}
+
+	// Infrastructure Resources
+	infraHandler := handlers.NewInfrastructureHandler(pool)
+	v1.GET("/infrastructure", infraHandler.List)
+
+	// FinOps / Cost Analytics
+	finopsHandler := handlers.NewFinOpsHandler(pool)
+	v1.GET("/costs/summary", finopsHandler.GetCostSummary)
+
+	// Provisioning / Deployments
+	v1.POST("/deployments", deploymentHandler.TriggerDeployment)
 
 	return r
 }
+
