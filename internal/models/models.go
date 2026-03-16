@@ -85,10 +85,14 @@ type CloudEnvironment struct {
 	AuthType         AuthType      `db:"auth_type"         json:"auth_type"`
 	// RoleARN is nullable — not all auth types require it.
 	RoleARN          *string       `db:"role_arn"          json:"role_arn,omitempty"`
+	// Regions lists every cloud region to audit for this environment.
+	// Defaults to the provider's primary region ([us-east-1] for AWS, [us-central1] for GCP).
+	Regions          []string      `db:"regions"           json:"regions"`
 	ConnectionStatus ConnStatus    `db:"connection_status" json:"connection_status"`
 	CreatedAt        time.Time     `db:"created_at"        json:"created_at"`
 	UpdatedAt        time.Time     `db:"updated_at"        json:"updated_at"`
 }
+
 
 // ─── InfrastructureResource ───────────────────────────────────────────────────
 // A discovered cloud resource refreshed by the Auditing Service. RLS-protected.

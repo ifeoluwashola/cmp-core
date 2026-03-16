@@ -1,8 +1,10 @@
 // internal/handlers/deployment.go
 // HTTP handlers for the Provisioning Engine.
 //
-//   POST /api/v1/deployments       — trigger an IaC pipeline run (JWT protected)
-//   POST /api/v1/webhooks/cicd     — receive completion callbacks (webhook secret)
+//	POST /api/v1/deployments       — trigger an IaC pipeline run (JWT protected)
+//	GET  /api/v1/deployments       — list deployment history (JWT protected)
+//	GET  /api/v1/deployments/:id   — fetch single deployment / poll status (JWT protected)
+//	POST /api/v1/webhooks/cicd     — receive completion callbacks (webhook secret)
 
 package handlers
 
@@ -164,4 +166,100 @@ func (h *DeploymentHandler) WebhookCallback(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "deployment updated", "job_id": req.JobID, "status": req.Status})
+}
+
+// ─── GET /api/v1/deployments ──────────────────────────────────────────────────
+
+// ListDeployments handles GET /api/v1/deployments.
+//
+//	@Summary     List deployment history
+//	@Description Returns all deployments for the tenant, newest first. Filter by env_id to scope to one environment.
+//	@Tags        deployments
+//	@Produce     json
+//	@Security    BearerAuth
+//	@Param       env_id  query     string  false  "Filter by cloud environment UUID"
+//	@Success     200     {array}   models.Deployment
+//	@Failure     400     {object}  map[string]string
+//	@Failure     401     {object}  map[string]string
+//	@Failure     500     {object}  map[string]string
+//	@Router      /api/v1/deployments [get]
+func (h *DeploymentHandler) ListDeployments(c *gin.Context) {
+	orgID, ok := middleware.OrgIDFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "organization context missing"})
+		return
+	}
+
+	var envID *uuid.UUID
+	if raw := c.Query("env_id"); raw != "" {
+		parsed, err := uuid.Parse(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid env_id: must be a UUID"})
+			return
+		}
+		envID = &parsed
+	}
+
+	var deployments []*models.Deployment
+	err := database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {
+		var txErr error
+		deployments, txErr = h.repo.ListDeployments(c.Request.Context(), tx, envID)
+		return txErr
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list deployments: " + err.Error()})
+		return
+	}
+
+	if deployments == nil {
+		deployments = []*models.Deployment{}
+	}
+	c.JSON(http.StatusOK, deployments)
+}
+
+// ─── GET /api/v1/deployments/:id ──────────────────────────────────────────────
+
+// GetDeployment handles GET /api/v1/deployments/:id.
+//
+//	@Summary     Get a single deployment
+//	@Description Fetches a deployment by its UUID — useful for polling status or reading logs after completion.
+//	@Tags        deployments
+//	@Produce     json
+//	@Security    BearerAuth
+//	@Param       id   path      string  true  "Deployment UUID"
+//	@Success     200  {object}  models.Deployment
+//	@Failure     400  {object}  map[string]string
+//	@Failure     401  {object}  map[string]string
+//	@Failure     404  {object}  map[string]string
+//	@Failure     500  {object}  map[string]string
+//	@Router      /api/v1/deployments/{id} [get]
+func (h *DeploymentHandler) GetDeployment(c *gin.Context) {
+	orgID, ok := middleware.OrgIDFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "organization context missing"})
+		return
+	}
+
+	deploymentID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deployment id: must be a UUID"})
+		return
+	}
+
+	var deployment *models.Deployment
+	err = database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {
+		var txErr error
+		deployment, txErr = h.repo.GetDeploymentByID(c.Request.Context(), tx, deploymentID)
+		return txErr
+	})
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "deployment not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get deployment: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, deployment)
 }

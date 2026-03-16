@@ -63,7 +63,10 @@ func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager, cicdProvider cicd
 	v1.GET("/costs/summary", finopsHandler.GetCostSummary)
 
 	// Provisioning / Deployments
-	v1.POST("/deployments", deploymentHandler.TriggerDeployment)
+	v1.POST("/deployments",     deploymentHandler.TriggerDeployment)
+	v1.GET("/deployments",      deploymentHandler.ListDeployments)
+	v1.GET("/deployments/:id",  deploymentHandler.GetDeployment)
+
 
 	return r
 }

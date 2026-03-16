@@ -43,10 +43,11 @@ func main() {
 	log.Println("auditing-service: database pool ready")
 
 	// ── Cloud provider registry ───────────────────────────────────────────────
-	// Register the mock AWS fetcher. Replace with real SDK implementations
-	// once IAM cross-account roles are set up.
+	// RealFetcher uses the AWS SDK v2 with cross-account AssumeRole.
+	// If a CloudEnvironment has a RoleARN set, the auditor will assume that
+	// role before making API calls — no long-lived keys needed on the platform.
 	registry := cloud.Registry{
-		models.CloudProviderAWS: awscloud.NewMockFetcher(),
+		models.CloudProviderAWS: awscloud.NewRealFetcher(),
 		// models.CloudProviderGCP:   gcp.NewFetcher(...),
 		// models.CloudProviderAzure: azure.NewFetcher(...),
 	}

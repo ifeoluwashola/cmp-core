@@ -123,6 +123,71 @@ func (r *DeploymentRepository) UpdateDeploymentStatus(
 	return nil
 }
 
+// ListDeployments returns deployments for the current org, newest first.
+// When envID is non-nil the results are further filtered to that environment.
+// Must be called inside a WithOrgTx — RLS handles the org constraint.
+func (r *DeploymentRepository) ListDeployments(
+	ctx context.Context,
+	tx pgx.Tx,
+	envID *uuid.UUID,
+) ([]*models.Deployment, error) {
+	const base = `
+		SELECT id, organization_id, environment_id, module_name,
+		       status, job_id, logs, created_at, updated_at
+		FROM deployments`
+
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if envID != nil {
+		rows, err = tx.Query(ctx,
+			base+" WHERE environment_id = $1 ORDER BY created_at DESC",
+			*envID,
+		)
+	} else {
+		rows, err = tx.Query(ctx, base+" ORDER BY created_at DESC")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("repository: list deployments: %w", err)
+	}
+	defer rows.Close()
+
+	var deployments []*models.Deployment
+	for rows.Next() {
+		d, err := scanDeployment(rows)
+		if err != nil {
+			return nil, fmt.Errorf("repository: scan deployment: %w", err)
+		}
+		deployments = append(deployments, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: iterate deployments: %w", err)
+	}
+	return deployments, nil
+}
+
+// GetDeploymentByID fetches a single deployment by its UUID.
+// Must be called inside a WithOrgTx — RLS ensures only the owner org can read it.
+func (r *DeploymentRepository) GetDeploymentByID(
+	ctx context.Context,
+	tx pgx.Tx,
+	deploymentID uuid.UUID,
+) (*models.Deployment, error) {
+	const q = `
+		SELECT id, organization_id, environment_id, module_name,
+		       status, job_id, logs, created_at, updated_at
+		FROM deployments
+		WHERE id = $1`
+
+	row := tx.QueryRow(ctx, q, deploymentID)
+	d, err := scanDeployment(row)
+	if err != nil {
+		return nil, fmt.Errorf("repository: get deployment %s: %w", deploymentID, err)
+	}
+	return d, nil
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 func scanDeployment(s pgxScanner) (*models.Deployment, error) {

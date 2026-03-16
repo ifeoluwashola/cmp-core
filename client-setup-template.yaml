@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Grants Read-Only Access to the Cloud Management Platform for infrastructure auditing.'
+
+Parameters:
+  CmpAwsAccountId:
+    Type: String
+    Description: 'The AWS Account ID of the Cloud Management Platform (Provided by the vendor).'
+    Default: '251478238597'
+  
+  CmpExternalId:
+    Type: String
+    Description: 'A unique security token to prevent the confused deputy problem (Provided by the vendor).'
+    Default: '054267c6-6bad-44fe-b538-8703859b1b6c'
+
+Resources:
+  CmpAuditorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'CMP-AuditorRole-${AWS::Region}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${CmpAwsAccountId}:root'
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref CmpExternalId
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/ReadOnlyAccess'
+      
+Outputs:
+  RoleARN:
+    Description: 'Copy this ARN and paste it into the Cloud Management Platform dashboard.'
+    Value: !GetAtt CmpAuditorRole.Arn

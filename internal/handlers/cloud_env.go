@@ -39,10 +39,12 @@ func NewCloudEnvHandler(pool *pgxpool.Pool) *CloudEnvHandler {
 
 // createRequest is the JSON body for registering a new cloud environment.
 type createCloudEnvRequest struct {
-	Name     string              `json:"name"      binding:"required"`
+	Name     string               `json:"name"      binding:"required"`
 	Provider models.CloudProvider `json:"provider"  binding:"required,oneof=aws gcp azure other"`
-	AuthType models.AuthType     `json:"auth_type" binding:"required,oneof=oidc iam_cross_account_role service_account_key"`
-	RoleARN  *string             `json:"role_arn"`
+	AuthType models.AuthType      `json:"auth_type" binding:"required,oneof=oidc iam_cross_account_role service_account_key"`
+	RoleARN  *string              `json:"role_arn"`
+	// Regions lists the cloud regions to audit. Leave empty to use the provider default.
+	Regions  []string             `json:"regions"`
 }
 
 // Create handles POST /api/v1/environments.
@@ -80,6 +82,7 @@ func (h *CloudEnvHandler) Create(c *gin.Context) {
 			Provider:       req.Provider,
 			AuthType:       req.AuthType,
 			RoleARN:        req.RoleARN,
+			Regions:        req.Regions, // nil → provider default applied in repository
 		})
 		return txErr
 	})

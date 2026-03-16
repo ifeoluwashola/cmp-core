@@ -32,20 +32,37 @@ type CreateCloudEnvInput struct {
 	Name           string
 	Provider       models.CloudProvider
 	AuthType       models.AuthType
-	RoleARN        *string // optional
+	RoleARN        *string  // optional
+	Regions        []string // cloud regions to audit; nil → provider default
+}
+
+// defaultRegions returns the sensible default region list for a given cloud provider.
+func defaultRegions(p models.CloudProvider) []string {
+	switch p {
+	case models.CloudProviderGCP:
+		return []string{"us-central1"}
+	case models.CloudProviderAzure:
+		return []string{"eastus"}
+	default: // aws, other
+		return []string{"us-east-1"}
+	}
 }
 
 // Create inserts a new cloud environment and returns the fully populated row.
 // RLS allows the INSERT because the session's organization_id matches the row.
 func (r *CloudEnvRepository) Create(ctx context.Context, tx pgx.Tx, in CreateCloudEnvInput) (*models.CloudEnvironment, error) {
+	regions := in.Regions
+	if len(regions) == 0 {
+		regions = defaultRegions(in.Provider)
+	}
 	const q = `
 		INSERT INTO cloud_environments
-			(organization_id, name, provider, auth_type, role_arn, connection_status)
+			(organization_id, name, provider, auth_type, role_arn, regions, connection_status)
 		VALUES
-			($1, $2, $3, $4, $5, 'pending')
+			($1, $2, $3, $4, $5, $6, 'pending')
 		RETURNING
 			id, organization_id, name, provider, auth_type,
-			role_arn, connection_status, created_at, updated_at`
+			role_arn, regions, connection_status, created_at, updated_at`
 
 	row := tx.QueryRow(ctx, q,
 		in.OrganizationID,
@@ -53,6 +70,7 @@ func (r *CloudEnvRepository) Create(ctx context.Context, tx pgx.Tx, in CreateClo
 		string(in.Provider),
 		string(in.AuthType),
 		in.RoleARN,
+		regions,
 	)
 
 	env, err := scanCloudEnv(row)
@@ -68,7 +86,7 @@ func (r *CloudEnvRepository) List(ctx context.Context, tx pgx.Tx) ([]*models.Clo
 	const q = `
 		SELECT
 			id, organization_id, name, provider, auth_type,
-			role_arn, connection_status, created_at, updated_at
+			role_arn, regions, connection_status, created_at, updated_at
 		FROM cloud_environments
 		ORDER BY created_at DESC`
 
@@ -115,6 +133,7 @@ func scanCloudEnv(s pgxScanner) (*models.CloudEnvironment, error) {
 		&provider,
 		&authType,
 		&roleARN,
+		&env.Regions, // pgx scans TEXT[] directly into []string
 		&status,
 		&createdAt,
 		&updatedAt,
