@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -27,6 +28,8 @@ import (
 	"github.com/ifeoluwashola/cmp-core/internal/auth"
 	"github.com/ifeoluwashola/cmp-core/internal/cicd"
 	"github.com/ifeoluwashola/cmp-core/internal/database"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func main() {
@@ -34,11 +37,18 @@ func main() {
 	defer cancel()
 
 	// ── Database ──────────────────────────────────────────────────────────────
-	pool, err := database.NewPool(ctx, buildConnString())
+	connStr := buildConnString()
+	pool, err := database.NewPool(ctx, connStr)
 	if err != nil {
 		log.Fatalf("api-gateway: database: %v", err)
 	}
 	defer pool.Close()
+	
+	sqlDB, err := sql.Open("pgx", connStr)
+	if err != nil {
+	    log.Fatalf("api-gateway: sql database driver mapping failed: %v", err)
+	}
+	defer sqlDB.Close()
 	log.Println("api-gateway: database pool ready")
 
 	// ── JWT Manager ───────────────────────────────────────────────────────────
@@ -61,7 +71,7 @@ func main() {
 	}
 
 	// ── Router & Server ───────────────────────────────────────────────────────
-	router := api.SetupRouter(pool, jwtManager, cicdProvider, webhookSecret)
+	router := api.SetupRouter(pool, sqlDB, jwtManager, cicdProvider, webhookSecret)
 
 	addr := ":" + getEnv("PORT", "8080")
 	log.Printf("api-gateway: listening on %s", addr)

@@ -10,9 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ifeoluwashola/cmp-core/internal/auth"
 	"github.com/ifeoluwashola/cmp-core/internal/cicd"
-	"github.com/ifeoluwashola/cmp-core/internal/handlers"
+	corehandlers "github.com/ifeoluwashola/cmp-core/internal/handlers"
+	"github.com/ifeoluwashola/cmp-core/internal/api/handlers"
 	"github.com/ifeoluwashola/cmp-core/internal/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"database/sql"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -21,7 +23,7 @@ import (
 )
 
 // SetupRouter creates the Gin engine with all routes and middleware registered.
-func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager, cicdProvider cicd.PipelineProvider, webhookSecret string) *gin.Engine {
+func SetupRouter(pool *pgxpool.Pool, sqlDB *sql.DB, jwtManager *auth.Manager, cicdProvider cicd.PipelineProvider, webhookSecret string) *gin.Engine {
 	r := gin.New()
 
 	// ── Global middleware ─────────────────────────────────────────────────────
@@ -34,7 +36,7 @@ func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager, cicdProvider cicd
 		allowedOrigin = "http://localhost:3000" // Default fallback
 	}
 	corsConfig.AllowOrigins = []string{allowedOrigin} // Dynamic Frontend origin
-	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization", "Accept"}
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization", "Accept", "ngrok-skip-browser-warning"}
 	corsConfig.AllowCredentials = true
 	r.Use(cors.New(corsConfig))
 
@@ -43,16 +45,18 @@ func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager, cicdProvider cicd
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// ── Public identity routes (no JWT required) ───────────────────────────────
-	identityHandler := handlers.NewIdentityHandler(pool, jwtManager)
+	// ── Public identity routes (no JWT required) ───────────────────────────────
+	identityHandler := corehandlers.NewIdentityHandler(pool, jwtManager)
 	r.POST("/register", identityHandler.Register)
 	r.POST("/login",    identityHandler.Login)
 
 	// ── Webhook routes (no JWT — validated by shared secret) ──────────────────
-	deploymentHandler := handlers.NewDeploymentHandler(pool, cicdProvider)
+	deploymentHandler := corehandlers.NewDeploymentHandler(pool, cicdProvider)
 	webhooks := r.Group("/api/v1/webhooks")
 	webhooks.Use(middleware.WebhookSecretMiddleware(webhookSecret))
 	{
 		webhooks.POST("/cicd", deploymentHandler.WebhookCallback)
+		webhooks.POST("/deployments", handlers.HandleDeploymentWebhook(sqlDB))
 	}
 
 	// ── Protected API v1 group (JWT required) ─────────────────────────────────
@@ -60,7 +64,7 @@ func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager, cicdProvider cicd
 	v1.Use(middleware.TenantMiddleware(jwtManager))
 
 	// Cloud Environments
-	envHandler := handlers.NewCloudEnvHandler(pool)
+	envHandler := corehandlers.NewCloudEnvHandler(pool)
 	envRoutes := v1.Group("/environments")
 	{
 		envRoutes.POST("", envHandler.Create)
@@ -68,11 +72,11 @@ func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager, cicdProvider cicd
 	}
 
 	// Infrastructure Resources
-	infraHandler := handlers.NewInfrastructureHandler(pool)
+	infraHandler := corehandlers.NewInfrastructureHandler(pool)
 	v1.GET("/infrastructure", infraHandler.List)
 
 	// FinOps / Cost Analytics
-	finopsHandler := handlers.NewFinOpsHandler(pool)
+	finopsHandler := corehandlers.NewFinOpsHandler(pool)
 	v1.GET("/costs/summary", finopsHandler.GetCostSummary)
 
 	// Provisioning / Deployments
