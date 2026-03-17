@@ -23,7 +23,7 @@ Resources:
           - Effect: Allow
             Principal:
               AWS: !Sub 'arn:aws:iam::${CmpAwsAccountId}:root'
-            Action: 'sts:AssumeRole'
+            Action: ['sts:AssumeRole', 'sts:TagSession']
             Condition:
               StringEquals:
                 'sts:ExternalId': !Ref CmpExternalId
