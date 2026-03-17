@@ -49,7 +49,7 @@ type workflowDispatchPayload struct {
 }
 
 // TriggerWorkflow initiates an execution instance of `deploy.yml`.
-func (c *GitHubClient) TriggerWorkflow(ctx context.Context, deploymentID uuid.UUID, moduleName string, envID uuid.UUID, roleARN string) error {
+func (c *GitHubClient) TriggerWorkflow(ctx context.Context, deploymentID uuid.UUID, moduleName string, envID uuid.UUID, provisioningRoleARN string) error {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/deploy.yml/dispatches", c.Owner, c.Repo)
 
 	payload := workflowDispatchPayload{
@@ -58,7 +58,7 @@ func (c *GitHubClient) TriggerWorkflow(ctx context.Context, deploymentID uuid.UU
 			"deployment_id":  deploymentID.String(),
 			"module_name":    moduleName,
 			"environment_id": envID.String(),
-			"role_arn":       roleARN,
+			"role_arn":       provisioningRoleARN,
 		},
 	}
 

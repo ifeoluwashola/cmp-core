@@ -84,7 +84,8 @@ type CloudEnvironment struct {
 	Provider         CloudProvider `db:"provider"          json:"provider"`
 	AuthType         AuthType      `db:"auth_type"         json:"auth_type"`
 	// RoleARN is nullable — not all auth types require it.
-	RoleARN          *string       `db:"role_arn"          json:"role_arn,omitempty"`
+	RoleARN             *string       `db:"role_arn"              json:"role_arn,omitempty"`
+	ProvisioningRoleARN *string       `db:"provisioning_role_arn" json:"provisioning_role_arn,omitempty"`
 	// Regions lists every cloud region to audit for this environment.
 	// Defaults to the provider's primary region ([us-east-1] for AWS, [us-central1] for GCP).
 	Regions          []string      `db:"regions"           json:"regions"`

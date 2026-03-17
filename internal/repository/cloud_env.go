@@ -31,9 +31,10 @@ type CreateCloudEnvInput struct {
 	OrganizationID uuid.UUID
 	Name           string
 	Provider       models.CloudProvider
-	AuthType       models.AuthType
-	RoleARN        *string  // optional
-	Regions        []string // cloud regions to audit; nil → provider default
+	AuthType            models.AuthType
+	RoleARN             *string  // optional
+	ProvisioningRoleARN *string  // optional
+	Regions             []string // cloud regions to audit; nil → provider default
 }
 
 // defaultRegions returns the sensible default region list for a given cloud provider.
@@ -57,12 +58,12 @@ func (r *CloudEnvRepository) Create(ctx context.Context, tx pgx.Tx, in CreateClo
 	}
 	const q = `
 		INSERT INTO cloud_environments
-			(organization_id, name, provider, auth_type, role_arn, regions, connection_status)
+			(organization_id, name, provider, auth_type, role_arn, provisioning_role_arn, regions, connection_status)
 		VALUES
-			($1, $2, $3, $4, $5, $6, 'pending')
+			($1, $2, $3, $4, $5, $6, $7, 'pending')
 		RETURNING
 			id, organization_id, name, provider, auth_type,
-			role_arn, regions, connection_status, created_at, updated_at`
+			role_arn, provisioning_role_arn, regions, connection_status, created_at, updated_at`
 
 	row := tx.QueryRow(ctx, q,
 		in.OrganizationID,
@@ -70,6 +71,7 @@ func (r *CloudEnvRepository) Create(ctx context.Context, tx pgx.Tx, in CreateClo
 		string(in.Provider),
 		string(in.AuthType),
 		in.RoleARN,
+		in.ProvisioningRoleARN,
 		regions,
 	)
 
@@ -86,7 +88,7 @@ func (r *CloudEnvRepository) List(ctx context.Context, tx pgx.Tx) ([]*models.Clo
 	const q = `
 		SELECT
 			id, organization_id, name, provider, auth_type,
-			role_arn, regions, connection_status, created_at, updated_at
+			role_arn, provisioning_role_arn, regions, connection_status, created_at, updated_at
 		FROM cloud_environments
 		ORDER BY created_at DESC`
 
@@ -119,11 +121,12 @@ type pgxScanner interface {
 
 func scanCloudEnv(s pgxScanner) (*models.CloudEnvironment, error) {
 	var (
-		env      models.CloudEnvironment
-		provider string
-		authType string
-		status   string
-		roleARN  *string
+		env              models.CloudEnvironment
+		provider         string
+		authType         string
+		status           string
+		roleARN          *string
+		provRoleARN      *string
 		createdAt, updatedAt time.Time
 	)
 	err := s.Scan(
@@ -133,6 +136,7 @@ func scanCloudEnv(s pgxScanner) (*models.CloudEnvironment, error) {
 		&provider,
 		&authType,
 		&roleARN,
+		&provRoleARN,
 		&env.Regions, // pgx scans TEXT[] directly into []string
 		&status,
 		&createdAt,
@@ -145,6 +149,7 @@ func scanCloudEnv(s pgxScanner) (*models.CloudEnvironment, error) {
 	env.AuthType = models.AuthType(authType)
 	env.ConnectionStatus = models.ConnStatus(status)
 	env.RoleARN = roleARN
+	env.ProvisioningRoleARN = provRoleARN
 	env.CreatedAt = createdAt
 	env.UpdatedAt = updatedAt
 	return &env, nil

@@ -87,12 +87,16 @@ func (h *DeploymentHandler) TriggerDeployment(c *gin.Context) {
 
 	err = database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {
 		// Use inline query directly against environments as we don't have GetEnvironmentByID in repo structs yet
-		const q = `SELECT role_arn FROM cloud_environments WHERE id = $1 LIMIT 1`
-		var rn *string
-		if e := tx.QueryRow(c.Request.Context(), q, req.EnvironmentID).Scan(&rn); e != nil {
+		const q = `SELECT role_arn, provisioning_role_arn FROM cloud_environments WHERE id = $1 LIMIT 1`
+		var rn, prn *string
+		if e := tx.QueryRow(c.Request.Context(), q, req.EnvironmentID).Scan(&rn, &prn); e != nil {
 			return fmt.Errorf("failed fetching environment details: %w", e)
 		}
-		if rn != nil {
+		
+		// Fallback onto Audit Role (RoleARN) natively if Provisioning Role isn't strictly defined by the organization.
+		if prn != nil && *prn != "" {
+			envRoleARN = *prn
+		} else if rn != nil {
 			envRoleARN = *rn
 		}
 
