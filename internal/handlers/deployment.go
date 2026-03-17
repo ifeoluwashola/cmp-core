@@ -9,6 +9,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -49,7 +50,7 @@ type triggerRequest struct {
 // TriggerDeployment handles POST /api/v1/deployments.
 //
 //	@Summary     Trigger an IaC pipeline deployment
-//	@Description Creates a deployment record (status: queued), calls the CI/CD provider to start the pipeline, then updates the record with the returned job_id (status: running). Returns 202 Accepted.
+//	@Description Creates a deployment record (status: queued), calls the GitHub action workflow, and sets the status dynamically based on HTTP request results.
 //	@Tags        deployments
 //	@Accept      json
 //	@Produce     json
@@ -73,9 +74,29 @@ func (h *DeploymentHandler) TriggerDeployment(c *gin.Context) {
 		return
 	}
 
-	// ── Step 1: Persist the initial record (status: queued) ────────────────
+	// ── Step 1: Initialize external API credentials
+	githubClient, err := cicd.NewGitHubClient()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize ci/cd provider: " + err.Error()})
+		return
+	}
+
+	// ── Step 2: Grab the Environment `RoleArn` for CI/CD integrations scoped to Org rules.
+	var envRoleARN string
 	var deployment *models.Deployment
-	err := database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {
+
+	err = database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {
+		// Use inline query directly against environments as we don't have GetEnvironmentByID in repo structs yet
+		const q = `SELECT role_arn FROM cloud_environments WHERE id = $1 LIMIT 1`
+		var rn *string
+		if e := tx.QueryRow(c.Request.Context(), q, req.EnvironmentID).Scan(&rn); e != nil {
+			return fmt.Errorf("failed fetching environment details: %w", e)
+		}
+		if rn != nil {
+			envRoleARN = *rn
+		}
+
+		// Create deployment sequentially.
 		var txErr error
 		deployment, txErr = h.repo.CreateDeployment(c.Request.Context(), tx, repository.CreateDeploymentInput{
 			OrganizationID: orgID,
@@ -84,29 +105,22 @@ func (h *DeploymentHandler) TriggerDeployment(c *gin.Context) {
 		})
 		return txErr
 	})
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create deployment: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// ── Step 2: Trigger the CI/CD pipeline ───────────────────────────────────
-	jobID, err := h.pipeline.TriggerDeployment(c.Request.Context(), *deployment)
+	// ── Step 3: Trigger the pipeline
+	err = githubClient.TriggerWorkflow(c.Request.Context(), deployment.ID, deployment.ModuleName, deployment.EnvironmentID, envRoleARN)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to trigger pipeline: " + err.Error()})
+		// ── Step 4a: Roll state back to 'failed' since dispatch failed gracefully
+		_ = database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {
+			return h.repo.UpdateDeploymentStatus(c.Request.Context(), tx, deployment.ID, models.DeploymentStatusFailed, "GitHub Actions dispatch rejected: "+err.Error())
+		})
+		deployment.Status = models.DeploymentStatusFailed
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed triggering cloud provision: " + err.Error()})
 		return
-	}
-
-	// ── Step 3: Stamp the job_id and flip status to 'running' ────────────────
-	err = database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {
-		return h.repo.SetJobID(c.Request.Context(), tx, deployment.ID, jobID)
-	})
-	if err != nil {
-		// Non-fatal for the caller — the pipeline is already running.
-		// Log but still return the record so the client has the deployment ID.
-		_ = err
-	} else {
-		deployment.JobID = &jobID
-		deployment.Status = models.DeploymentStatusRunning
 	}
 
 	c.JSON(http.StatusAccepted, deployment)
