@@ -25,6 +25,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
@@ -105,17 +107,77 @@ func (f *RealFetcher) FetchResources(ctx context.Context, env models.CloudEnviro
 
 // ─── FetchCosts ────────────────────────────────────────────────────────────────
 
-// FetchCosts returns mock daily cost data to avoid AWS Cost Explorer API charges
-// during development and testing.
-// TODO: Replace with real aws/aws-sdk-go-v2/service/costexplorer calls when
-// billing ingestion is required in production.
+// FetchCosts returns real unblended costs grouped by service from AWS Cost Explorer.
 func (f *RealFetcher) FetchCosts(ctx context.Context, env models.CloudEnvironment) ([]models.DailyCost, error) {
-	today := time.Now().UTC().Truncate(24 * time.Hour)
-	return []models.DailyCost{
-		{OrganizationID: env.OrganizationID, EnvironmentID: env.ID, Date: today, ServiceCategory: "Compute", Amount: "45.500000", Currency: "USD"},
-		{OrganizationID: env.OrganizationID, EnvironmentID: env.ID, Date: today, ServiceCategory: "Database", Amount: "12.000000", Currency: "USD"},
-		{OrganizationID: env.OrganizationID, EnvironmentID: env.ID, Date: today, ServiceCategory: "Storage", Amount: "3.750000", Currency: "USD"},
-	}, nil
+	cfg, err := f.buildConfig(ctx, env)
+	if err != nil {
+		return nil, fmt.Errorf("FetchCosts: build config: %w", err)
+	}
+
+	client := costexplorer.NewFromConfig(cfg)
+	
+	now := time.Now().UTC()
+	// CE dates are inclusive start and exclusive end. So Start: YYYY-MM-01, End: YYYY-MM-today.
+	// If today is the 1st, Cost Explorer requires at least a 1-day range. We adjust End to tomorrow.
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	end := now.AddDate(0, 0, 1)
+
+	var costs []models.DailyCost
+
+	out, err := client.GetCostAndUsage(ctx, &costexplorer.GetCostAndUsageInput{
+		TimePeriod: &cetypes.DateInterval{
+			Start: aws.String(start.Format("2006-01-02")),
+			End:   aws.String(end.Format("2006-01-02")),
+		},
+		Granularity: cetypes.GranularityDaily,
+		Metrics:     []string{"UnblendedCost"},
+		GroupBy: []cetypes.GroupDefinition{
+			{
+				Type: cetypes.GroupDefinitionTypeDimension,
+				Key:  aws.String("SERVICE"),
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetCostAndUsage: %w", err)
+	}
+
+	for _, result := range out.ResultsByTime {
+		// Convert CE string date to time.Time
+		if result.TimePeriod == nil || result.TimePeriod.Start == nil {
+			continue
+		}
+		
+		date, err := time.Parse("2006-01-02", *result.TimePeriod.Start)
+		if err != nil {
+			fmt.Printf("aws real: parse CE date %v: %v\n", *result.TimePeriod.Start, err)
+			continue
+		}
+
+		for _, group := range result.Groups {
+			if len(group.Keys) == 0 {
+				continue
+			}
+			
+			serviceCat := group.Keys[0]
+			
+			metrics, ok := group.Metrics["UnblendedCost"]
+			if !ok || metrics.Amount == nil {
+				continue
+			}
+
+			costs = append(costs, models.DailyCost{
+				OrganizationID:  env.OrganizationID,
+				EnvironmentID:   env.ID,
+				Date:            date,
+				ServiceCategory: serviceCat,
+				Amount:          *metrics.Amount,
+				Currency:        aws.ToString(metrics.Unit), // Usually USD
+			})
+		}
+	}
+
+	return costs, nil
 }
 
 // ─── internal helpers ──────────────────────────────────────────────────────────

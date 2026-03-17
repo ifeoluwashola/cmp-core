@@ -29,6 +29,15 @@ Resources:
                 'sts:ExternalId': !Ref CmpExternalId
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/ReadOnlyAccess'
+      Policies:
+        - PolicyName: AllowCostExplorerAPI
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ce:GetCostAndUsage
+                Resource: "*"
       
 Outputs:
   RoleARN:
