@@ -53,7 +53,7 @@ func (c *GitHubClient) TriggerWorkflow(ctx context.Context, deploymentID uuid.UU
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/deploy.yml/dispatches", c.Owner, c.Repo)
 
 	payload := workflowDispatchPayload{
-		Ref: "main",
+		Ref: "master",
 		Inputs: map[string]string{
 			"deployment_id":  deploymentID.String(),
 			"module_name":    moduleName,
