@@ -115,7 +115,16 @@ type loginRequest struct {
 }
 
 type loginResponse struct {
-	Token string `json:"token"`
+	Token        string `json:"token"`
+	User         struct {
+		ID    string `json:"id"`
+		Email string `json:"email"`
+		Role  string `json:"role"`
+	} `json:"user"`
+	Organization struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"organization"`
 }
 
 // Login handles POST /login.
@@ -138,6 +147,7 @@ func (h *IdentityHandler) Login(c *gin.Context) {
 	}
 
 	var token string
+	var resp loginResponse
 	err := database.WithServiceTx(c.Request.Context(), h.pool, func(tx pgx.Tx) error {
 		user, txErr := h.repo.GetUserByEmail(c.Request.Context(), tx, req.Email)
 		if txErr != nil {
@@ -148,8 +158,25 @@ func (h *IdentityHandler) Login(c *gin.Context) {
 			return fmt.Errorf("invalid credentials")
 		}
 
+		// Fetch organization name
+		var orgName string
+		if fetchErr := tx.QueryRow(c.Request.Context(), "SELECT name FROM organizations WHERE id = $1", user.OrganizationID).Scan(&orgName); fetchErr != nil {
+			return fmt.Errorf("failed to fetch organization details: %w", fetchErr)
+		}
+
 		token, txErr = h.jwt.Generate(user.ID, user.OrganizationID, string(user.Role))
-		return txErr
+		if txErr != nil {
+			return txErr
+		}
+
+		resp.Token = token
+		resp.User.ID = user.ID.String()
+		resp.User.Email = user.Email
+		resp.User.Role = string(user.Role)
+		resp.Organization.ID = user.OrganizationID.String()
+		resp.Organization.Name = orgName
+		
+		return nil
 	})
 	if err != nil {
 		if err.Error() == "invalid credentials" || err.Error() == "identity: user not found" {
@@ -160,7 +187,7 @@ func (h *IdentityHandler) Login(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, loginResponse{Token: token})
+	c.JSON(http.StatusOK, resp)
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

@@ -55,11 +55,23 @@ func main() {
 	// ── Auditor ───────────────────────────────────────────────────────────────
 	auditor := worker.NewAuditor(pool, registry)
 
-	ticker := time.NewTicker(auditInterval)
-	defer ticker.Stop()
+	infraTicker := time.NewTicker(auditInterval)
+	defer infraTicker.Stop()
 
-	log.Printf("auditing-service: starting audit loop (interval: %s)", auditInterval)
-	go auditor.Start(ctx, ticker)
+	costTicker := time.NewTicker(24 * time.Hour)
+	defer costTicker.Stop()
+
+	log.Printf("auditing-service: starting resource audit loop (interval: %s)", auditInterval)
+	go auditor.StartResourceAuditor(ctx, infraTicker)
+
+	log.Printf("auditing-service: triggering initial cost sync now")
+	go func() {
+		if err := auditor.RunCostCycle(ctx); err != nil {
+			log.Printf("auditing-service: initial cost sync failed: %v", err)
+		}
+		// Then hand over to the 24-hour background ticker
+		auditor.StartCostAuditor(ctx, costTicker)
+	}()
 
 	// Block until OS signal or context cancellation.
 	<-ctx.Done()

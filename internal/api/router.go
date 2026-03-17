@@ -4,6 +4,9 @@
 package api
 
 import (
+	"os"
+
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/ifeoluwashola/cmp-core/internal/auth"
 	"github.com/ifeoluwashola/cmp-core/internal/cicd"
@@ -24,6 +27,16 @@ func SetupRouter(pool *pgxpool.Pool, jwtManager *auth.Manager, cicdProvider cicd
 	// ── Global middleware ─────────────────────────────────────────────────────
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
+
+	corsConfig := cors.DefaultConfig()
+	allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
+	if allowedOrigin == "" {
+		allowedOrigin = "http://localhost:3000" // Default fallback
+	}
+	corsConfig.AllowOrigins = []string{allowedOrigin} // Dynamic Frontend origin
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization", "Accept"}
+	corsConfig.AllowCredentials = true
+	r.Use(cors.New(corsConfig))
 
 	// ── Health check & Swagger (no auth) ──────────────────────────────────────
 	r.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })

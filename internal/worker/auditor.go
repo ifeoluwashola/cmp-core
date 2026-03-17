@@ -35,10 +35,10 @@ func NewAuditor(pool *pgxpool.Pool, registry cloud.Registry) *Auditor {
 	return &Auditor{pool: pool, registry: registry}
 }
 
-// Start runs the audit loop until ctx is cancelled.
+// StartResourceAuditor runs the resource audit loop until ctx is cancelled.
 // Call it in a goroutine; it blocks until the context is done.
-func (a *Auditor) Start(ctx context.Context, ticker *time.Ticker) {
-	log.Println("auditor: started, waiting for first tick…")
+func (a *Auditor) StartResourceAuditor(ctx context.Context, ticker *time.Ticker) {
+	log.Println("auditor: resource auditor started, waiting for first tick…")
 	for {
 		select {
 		case <-ctx.Done():
@@ -97,37 +97,86 @@ func (a *Auditor) auditEnvironment(ctx context.Context, env models.CloudEnvironm
 		return 0, fmt.Errorf("auditEnvironment: fetch resources: %w", err)
 	}
 
-	// ── Step 3: Fetch daily costs from the cloud provider ──────────────────
-	costs, err := provider.FetchCosts(ctx, env)
-	if err != nil {
-		// Non-fatal: log and continue without cost data.
-		log.Printf("auditEnvironment: fetch costs for %s: %v", env.ID, err)
-		costs = nil
-	}
-
-	if len(resources) == 0 && len(costs) == 0 {
+	if len(resources) == 0 {
 		return 0, nil
 	}
 
-	// ── Step 4: Upsert resources and costs under the correct tenant context ─
+	// ── Step 3: Upsert resources under the correct tenant context ─────────
 	err = database.WithOrgTx(ctx, a.pool, env.OrganizationID, func(tx pgx.Tx) error {
-		if len(resources) > 0 {
-			if err := upsertResources(ctx, tx, resources); err != nil {
-				return err
-			}
-		}
-		if len(costs) > 0 {
-			if err := upsertCosts(ctx, tx, costs); err != nil {
-				return err
-			}
-		}
-		return nil
+		return upsertResources(ctx, tx, resources)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("auditEnvironment: upsert: %w", err)
 	}
 
 	return len(resources), nil
+}
+
+// StartCostAuditor runs the cost audit loop until ctx is cancelled.
+func (a *Auditor) StartCostAuditor(ctx context.Context, ticker *time.Ticker) {
+	log.Println("auditor: cost auditor started, waiting for first tick…")
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("auditor: cost auditor context cancelled, shutting down")
+			return
+		case t := <-ticker.C:
+			log.Printf("auditor: cost tick at %s — starting cost cycle", t.Format(time.RFC3339))
+			if err := a.RunCostCycle(ctx); err != nil {
+				log.Printf("auditor: cost cycle error: %v", err)
+			}
+		}
+	}
+}
+
+// RunCostCycle performs a single full cost pass. Exposed so main.go can manually trigger it immediately.
+func (a *Auditor) RunCostCycle(ctx context.Context) error {
+	var envs []models.CloudEnvironment
+	err := database.WithServiceTx(ctx, a.pool, func(tx pgx.Tx) error {
+		var txErr error
+		envs, txErr = fetchActiveEnvironments(ctx, tx)
+		return txErr
+	})
+	if err != nil {
+		return fmt.Errorf("RunCostCycle: list environments: %w", err)
+	}
+
+	log.Printf("auditor: found %d active environment(s) for cost sync", len(envs))
+
+	for _, env := range envs {
+		if err := a.auditCostEnvironment(ctx, env); err != nil {
+			log.Printf("auditor: cost environment %s (%s): %v", env.Name, env.ID, err)
+			continue
+		}
+	}
+
+	return nil
+}
+
+// auditCostEnvironment polls one cloud environment and upserts its costs.
+func (a *Auditor) auditCostEnvironment(ctx context.Context, env models.CloudEnvironment) error {
+	provider, err := a.registry.Get(env.Provider)
+	if err != nil {
+		return fmt.Errorf("auditCostEnvironment: %w", err)
+	}
+
+	costs, err := provider.FetchCosts(ctx, env)
+	if err != nil {
+		return fmt.Errorf("auditCostEnvironment: fetch costs: %w", err)
+	}
+
+	if len(costs) == 0 {
+		return nil
+	}
+
+	err = database.WithOrgTx(ctx, a.pool, env.OrganizationID, func(tx pgx.Tx) error {
+		return upsertCosts(ctx, tx, costs)
+	})
+	if err != nil {
+		return fmt.Errorf("auditCostEnvironment: upsert: %w", err)
+	}
+
+	return nil
 }
 
 // ─── SQL helpers ──────────────────────────────────────────────────────────────
