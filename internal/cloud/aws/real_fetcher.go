@@ -10,9 +10,8 @@
 //     without needing long-lived keys.
 //  3. Make real API calls using the assumed-role config.
 //
-// FetchCosts reuses the mock cost data to avoid AWS Cost Explorer charges
-// during development/testing.  Swap it out for a real CostExplorer call
-// when billing data ingestion is required.
+// FetchCosts retrieves real billing telemetry from AWS Cost Explorer.
+// Billing data is aggregated daily and grouped by service category.
 
 package aws
 
@@ -73,10 +72,14 @@ func (f *RealFetcher) FetchResources(ctx context.Context, env models.CloudEnviro
 		}
 
 		// Helper to invoke a fetcher and merge its results
+		var fetchErr error
 		merge := func(fetcherName string, fn func(context.Context, aws.Config, models.CloudEnvironment) ([]models.InfrastructureResource, error)) {
+			if fetchErr != nil {
+				return
+			}
 			res, err := fn(ctx, cfg, env)
 			if err != nil {
-				fmt.Printf("aws real: %s env=%s region=%s: %v\n", fetcherName, env.ID, region, err)
+				fetchErr = fmt.Errorf("aws real: %s env=%s region=%s: %w", fetcherName, env.ID, region, err)
 			} else {
 				for _, r := range res {
 					if _, dup := seen[r.ProviderResourceID]; !dup {
@@ -96,9 +99,16 @@ func (f *RealFetcher) FetchResources(ctx context.Context, env models.CloudEnviro
 		merge("fetchEKSClusters", f.fetchEKSClusters)
 		merge("fetchECSClusters", f.fetchECSClusters)
 
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+
 		// ── Global resources (only fetch once, on the first region) ────────
 		if region == env.Regions[0] {
 			merge("fetchS3Buckets", f.fetchS3Buckets)
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
 		}
 	}
 

@@ -17,6 +17,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ifeoluwashola/cmp-core/internal/cloud"
 	"github.com/ifeoluwashola/cmp-core/internal/database"
 	"github.com/ifeoluwashola/cmp-core/internal/models"
@@ -102,11 +103,22 @@ func (a *Auditor) auditEnvironment(ctx context.Context, env models.CloudEnvironm
 	}
 
 	// ── Step 3: Upsert resources under the correct tenant context ─────────
+	scanTime := time.Now().UTC()
 	err = database.WithOrgTx(ctx, a.pool, env.OrganizationID, func(tx pgx.Tx) error {
-		return upsertResources(ctx, tx, resources)
+		// Update resources to have the current scanTime
+		for i := range resources {
+			resources[i].LastAuditedAt = &scanTime
+		}
+
+		if err := upsertResources(ctx, tx, resources); err != nil {
+			return err
+		}
+
+		// Reconciliation: Mark resources NOT seen in this scan as deleted
+		return markMissingResourcesDeleted(ctx, tx, env.ID, scanTime)
 	})
 	if err != nil {
-		return 0, fmt.Errorf("auditEnvironment: upsert: %w", err)
+		return 0, fmt.Errorf("auditEnvironment: sync: %w", err)
 	}
 
 	return len(resources), nil
@@ -237,13 +249,36 @@ func upsertResources(ctx context.Context, tx pgx.Tx, resources []models.Infrastr
 			r.EnvironmentID,
 			r.ProviderResourceID,
 			r.ResourceType,
-			r.Attributes, // json.RawMessage → pgx sends as JSONB
+			r.Attributes,
 			r.Status,
 			r.LastAuditedAt,
 		); err != nil {
 			return fmt.Errorf("upsertResources %s: %w", r.ProviderResourceID, err)
 		}
 	}
+	return nil
+}
+
+func markMissingResourcesDeleted(ctx context.Context, tx pgx.Tx, envID uuid.UUID, scanTime time.Time) error {
+	// Any resource belonging to this environment that wasn't updated by the current scan
+	// (i.e. last_audited_at < scanTime) and isn't already 'deleted' should be marked as such.
+	const q = `
+		UPDATE infrastructure_resources
+		SET    status = 'deleted',
+		       updated_at = NOW()
+		WHERE  environment_id = $1
+		  AND  last_audited_at < $2
+		  AND  status != 'deleted'`
+
+	tag, err := tx.Exec(ctx, q, envID, scanTime)
+	if err != nil {
+		return fmt.Errorf("markMissingResourcesDeleted: %w", err)
+	}
+
+	if rows := tag.RowsAffected(); rows > 0 {
+		log.Printf("auditor: reconciled environment %s — marked %d resource(s) as deleted", envID, rows)
+	}
+
 	return nil
 }
 
