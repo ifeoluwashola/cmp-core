@@ -65,9 +65,9 @@ func main() {
 	cicdProvider := cicd.NewMockProvider()
 
 	// ── Webhook Secret ────────────────────────────────────────────────────────
-	webhookSecret := getEnv("WEBHOOK_SECRET", "")
+	webhookSecret := getEnv("CMP_WEBHOOK_SECRET", "")
 	if webhookSecret == "" {
-		log.Fatal("api-gateway: WEBHOOK_SECRET must be set")
+		log.Fatal("api-gateway: CMP_WEBHOOK_SECRET must be set")
 	}
 
 	// ── Router & Server ───────────────────────────────────────────────────────
