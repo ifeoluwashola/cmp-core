@@ -82,7 +82,8 @@ func (h *DeploymentHandler) TriggerDeployment(c *gin.Context) {
 	}
 
 	// ── Step 2: Grab the Environment `RoleArn` for CI/CD integrations scoped to Org rules.
-	var envRoleARN string
+	// var envRoleARN string
+	var envProvisioningRoleARN string
 	var deployment *models.Deployment
 
 	err = database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {
@@ -95,9 +96,9 @@ func (h *DeploymentHandler) TriggerDeployment(c *gin.Context) {
 		
 		// Fallback onto Audit Role (RoleARN) natively if Provisioning Role isn't strictly defined by the organization.
 		if prn != nil && *prn != "" {
-			envRoleARN = *prn
+			envProvisioningRoleARN = *prn
 		} else if rn != nil {
-			envRoleARN = *rn
+			envProvisioningRoleARN = *rn
 		}
 
 		// Create deployment sequentially.
@@ -116,7 +117,7 @@ func (h *DeploymentHandler) TriggerDeployment(c *gin.Context) {
 	}
 
 	// ── Step 3: Trigger the pipeline
-	err = githubClient.TriggerWorkflow(c.Request.Context(), deployment.ID, deployment.ModuleName, deployment.EnvironmentID, envRoleARN)
+	err = githubClient.TriggerWorkflow(c.Request.Context(), deployment.ID, deployment.ModuleName, deployment.EnvironmentID, envProvisioningRoleARN)
 	if err != nil {
 		// ── Step 4a: Roll state back to 'failed' since dispatch failed gracefully
 		_ = database.WithOrgTx(c.Request.Context(), h.pool, orgID, func(tx pgx.Tx) error {

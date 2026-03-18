@@ -55,10 +55,10 @@ func (c *GitHubClient) TriggerWorkflow(ctx context.Context, deploymentID uuid.UU
 	payload := workflowDispatchPayload{
 		Ref: "master",
 		Inputs: map[string]string{
-			"deployment_id":  deploymentID.String(),
-			"module_name":    moduleName,
-			"environment_id": envID.String(),
-			"role_arn":       provisioningRoleARN,
+			"deployment_id":       deploymentID.String(),
+			"module_name":         moduleName,
+			"environment_id":      envID.String(),
+			"provisioning_role_arn": provisioningRoleARN,
 		},
 	}
 
